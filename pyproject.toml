@@ -7,7 +7,7 @@ name = "degiro-renta"
 version = "0.1.0"
 description = "CLI que calcula el IRPF a partir del extracto de Degiro."
 readme = "README.md"
-requires-python = "==3.11.*"
+requires-python = "==3.13.*"
 dependencies = [
     "rich==15.0.0",
     "polars==2.1.0",
