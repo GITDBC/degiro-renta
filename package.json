@@ -4,7 +4,7 @@
   "private": true,
   "description": "Formateo con Prettier de los ficheros no-Python del proyecto (Markdown, JSON, TS/JS, YAML). El código Python se formatea con Ruff.",
   "devDependencies": {
-    "prettier": "3.9.6"
+    "prettier": "3.9.10"
   },
   "scripts": {
     "format": "prettier --write .",
