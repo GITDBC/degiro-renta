@@ -1,7 +1,22 @@
+<p align="center">
+  <a href="https://github.com/GITDBC/degiro-renta/actions/workflows/workflow.yml">
+    <img src="https://github.com/GITDBC/degiro-renta/actions/workflows/workflow.yml/badge.svg">
+  </a>
+  <a href="https://github.com/GITDBC/degiro-renta/blob/main/LICENSE" target="_blank">
+    <img src="https://img.shields.io/github/license/GITDBC/degiro-renta" alt="License">
+  </a>
+</p>
+
 # Degiro Renta
 
 CLI que calcula la fiscalidad IRPF a partir del extracto de cuenta de Degiro: parsea el
 fichero, casa las ventas por FIFO y muestra las tablas por terminal.
+
+> **Aviso.** Este proyecto no tiene ninguna relación, afiliación ni vínculo con Degiro.
+> Es una herramienta independiente. No me hago responsable de los fallos, errores o
+> cálculos incorrectos que pueda producir, ni de las decisiones que tomes a partir de
+> sus resultados. No es asesoramiento fiscal ni sustituye a un profesional. Revisa
+> siempre las cifras antes de presentar tu declaración.
 
 ## Uso
 
