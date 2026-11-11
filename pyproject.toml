@@ -5,7 +5,7 @@ build-backend = "uv_build"
 [project]
 name = "degiro-renta"
 version = "0.1.0"
-description = "Informe fiscal IRPF (España) a partir del extracto de cuenta de Degiro."
+description = "CLI que calcula el IRPF a partir del extracto de Degiro."
 readme = "README.md"
 requires-python = "==3.11.*"
 dependencies = [

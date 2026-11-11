@@ -9,8 +9,8 @@
 
 # Degiro Renta
 
-CLI que calcula la fiscalidad IRPF a partir del extracto de cuenta de Degiro: parsea el
-fichero, casa las ventas por FIFO y muestra las tablas por terminal.
+CLI que calcula el IRPF a partir del extracto de Degiro: parsea el fichero, casa las
+ventas por FIFO y muestra las tablas por terminal.
 
 > **Aviso.** Este proyecto no tiene ninguna relación, afiliación ni vínculo con Degiro.
 > Es una herramienta independiente. No me hago responsable de los fallos, errores o
