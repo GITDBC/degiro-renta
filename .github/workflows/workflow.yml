@@ -6,79 +6,77 @@ on:
   pull_request:
     branches: [main, dev]
 
-env:
-  SRC_PROJECT_FOLDER: "degiro_renta"
-  TEST_PATH: "tests"
-  SRC_PYTHON_VERSION: "3.11"
-
 jobs:
-  setup-lint-test:
+  lint-test:
     name: Lint and Test
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout Repository
+        uses: actions/checkout@v7
 
-      - name: Setup Python Environment
-        uses: ./.github/actions/setup-python-env
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
-          src-python-version: ${{ env.SRC_PYTHON_VERSION }}
-          uv-group: "pipeline"
-          uv-extra: "--all-extras"
+          enable-cache: true
 
-      - name: Lint Code
-        uses: ./.github/actions/lint-code
-        with:
-          src-project-folder: ${{ env.SRC_PROJECT_FOLDER }}
+      - name: Install Python Dependencies
+        run: uv sync
 
-      - name: Run Tests
-        uses: ./.github/actions/test-code
-        with:
-          src-project-folder: ${{ env.SRC_PROJECT_FOLDER }}
-          src-tests-folder: ${{ env.TEST_PATH }}
+      - name: Lint with Ruff
+        run: uv run ruff check degiro_renta/
 
-  create-release:
-    if: github.ref == 'refs/heads/main'
+      - name: Check Cognitive Complexity
+        run: uv run complexipy -f degiro_renta/
+
+      - name: Check Types with Mypy
+        run: uv run mypy degiro_renta/
+
+      - name: Run Tests with Pytest
+        run: uv run pytest tests
+
+  release:
     name: Create Release
+    if: github.ref == 'refs/heads/main'
+    needs: lint-test
     runs-on: ubuntu-latest
-    needs: setup-lint-test
     permissions:
       contents: write
-
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.release.outputs.version }}
       created: ${{ steps.release.outputs.created }}
-
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
+      - name: Checkout Repository
+        uses: actions/checkout@v7
 
-      - name: Setup Python Environment
-        uses: ./.github/actions/setup-python-env
-        with:
-          src-python-version: ${{ env.SRC_PYTHON_VERSION }}
-          uv-group: "pipeline"
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
 
-      - name: Get Version
-        id: version
-        uses: ./.github/actions/obtain-version
-
-      - name: Create Release
+      - name: Create Release if the Version Has None
         id: release
-        uses: ./.github/actions/create-release
-        with:
-          version: ${{ steps.version.outputs.version }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="v$(uv version --short)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            gh release create "$VERSION" --title "$VERSION" --target "$GITHUB_SHA" --generate-notes
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
 
   build-binaries:
-    if: needs.create-release.outputs.created == 'true'
     name: Build ${{ matrix.artifact }}
+    if: needs.release.outputs.created == 'true'
+    needs: release
     runs-on: ${{ matrix.os }}
-    needs: create-release
     permissions:
       contents: write
-
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         include:
@@ -86,25 +84,20 @@ jobs:
             artifact: degiro-renta-linux
           - os: windows-latest
             artifact: degiro-renta-windows.exe
-
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout Repository
+        uses: actions/checkout@v7
 
-      - name: Setup Python Environment
-        uses: ./.github/actions/setup-python-env
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
-          src-python-version: ${{ env.SRC_PYTHON_VERSION }}
+          enable-cache: true
 
-      - name: Install PyInstaller
-        shell: bash
-        run: uv pip install pyinstaller
+      - name: Install Python Dependencies
+        run: uv sync --no-dev --no-group pipeline
 
-      - name: Build binary
-        shell: bash
-        run: uv run pyinstaller --onefile --name ${{ matrix.artifact }} --clean --hidden-import=fastexcel degiro_renta/__main__.py
+      - name: Build Binary with PyInstaller
+        run: uv run --with pyinstaller pyinstaller --onefile --name ${{ matrix.artifact }} --clean --hidden-import=fastexcel degiro_renta/__main__.py
 
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.create-release.outputs.version }}
-          files: dist/${{ matrix.artifact }}
+      - name: Upload Binary to Release
+        run: gh release upload "${{ needs.release.outputs.version }}" "dist/${{ matrix.artifact }}"
