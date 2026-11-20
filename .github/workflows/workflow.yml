@@ -1,0 +1,192 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  docs-branch: "gh-pages"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-format:
+    name: Check Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Prettier Format Checking
+        run: npx prettier --check .
+
+  lint-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+
+      - name: Install Python Dependencies
+        run: uv sync --locked
+
+      - name: Check Format with Ruff
+        run: uv run ruff format --check .
+
+      - name: Lint with Ruff
+        run: uv run ruff check .
+
+      - name: Check Cognitive Complexity
+        run: uv run complexipy -f .
+
+      - name: Check Types with Mypy
+        run: uv run mypy degiro_renta/
+
+      - name: Run Tests with Pytest
+        run: uv run pytest tests
+
+  build-deploy-docs:
+    name: Build and Deploy Documentation
+    needs: check-format
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+
+      - name: Install Python Dependencies
+        run: uv sync --locked
+
+      - name: Build Documentation
+        run: uv run zensical build --clean
+
+      - name: Deploy Documentation with Mike
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          VERSION=$(uv version --short)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin ${{ env.docs-branch }} || echo "${{ env.docs-branch }} does not exist yet, mike will create it"
+          uv run mike deploy --branch ${{ env.docs-branch }} --push --update-aliases "v${VERSION}" latest
+          uv run mike set-default --branch ${{ env.docs-branch }} --push latest
+
+  version:
+    name: Check Version
+    if: github.ref == 'refs/heads/main'
+    needs: lint-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      new: ${{ steps.check.outputs.new }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+
+      - name: Check Whether the Version Has a Release
+        id: check
+        run: |
+          VERSION="v$(uv version --short)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-binaries:
+    name: Build ${{ matrix.artifact }}
+    if: needs.version.outputs.new == 'true'
+    needs: version
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: degiro-renta-linux
+          - os: windows-latest
+            artifact: degiro-renta-windows.exe
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+
+      - name: Install Python Dependencies
+        run: uv sync --no-dev --no-group pipeline --no-group docs
+
+      - name: Build Binary with PyInstaller
+        run:
+          uv run --with pyinstaller pyinstaller --onefile --name ${{ matrix.artifact }}
+          --clean --hidden-import=fastexcel degiro_renta/__main__.py
+
+      - name: Upload Binary as Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    if: needs.version.outputs.new == 'true'
+    needs: [version, build-binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Download Binaries
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create Release with Binaries
+        run: |
+          gh release create "${{ needs.version.outputs.version }}" dist/* \
+            --title "${{ needs.version.outputs.version }}" \
+            --target "$GITHUB_SHA" \
+            --generate-notes

@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: local-check
+        name: Pre-Commit Makefile Validation
+        entry: make all
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
